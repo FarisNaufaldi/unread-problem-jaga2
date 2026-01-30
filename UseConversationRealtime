@@ -1,0 +1,40 @@
+import { useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { supabase } from "../api/supabaseClient";
+import { messagingKeys } from "../api/messaging";
+import { getCurrentUserId } from "../utils/userContext";
+
+export const useConversationsRealtime = () => {
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    const userId = getCurrentUserId();
+    if (!userId) return;
+
+    // Create channel synchronously (critical for cleanup)
+    const channel = supabase
+      .channel("conversations:list")
+      .on(
+        "postgres_changes",
+        {
+          event: "*", // INSERT, UPDATE, DELETE
+          schema: "public",
+          table: "conversations",
+          // NO FILTER - RLS handles security automatically
+        },
+        () => {
+          // Invalidate conversations list (user-scoped)
+          queryClient.invalidateQueries({
+            queryKey: messagingKeys.conversations(userId),
+          });
+        }
+      )
+      .subscribe();
+
+    // Cleanup
+    return () => {
+      supabase.removeChannel(channel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queryClient]);
+};
