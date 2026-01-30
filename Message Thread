@@ -1,0 +1,124 @@
+// MessageThread.tsx
+import { useEffect, useRef } from "react";
+import { useMessaging } from "../../hooks/useMessaging";
+import { MessageBubble } from "./MessageBubble";
+import { MessageInput } from "./MessageInput";
+import { MessageThreadHeader } from "./MessageThreadHeader";
+
+interface MessageThreadProps {
+  conversationId: string;
+}
+
+export const MessageThread = ({ conversationId }: MessageThreadProps) => {
+  const { messages, isLoadingMessages, markAsRead } = useMessaging();
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Scroll to bottom on new messages
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "end",
+    });
+  }, [messages]);
+
+  // Mark as read when conversation is opened
+  useEffect(() => {
+    if (conversationId) {
+      markAsRead(conversationId);
+    }
+  }, [conversationId, markAsRead]);
+
+  // Mark as read on page unload/refresh
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (conversationId) {
+        markAsRead(conversationId);
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [conversationId, markAsRead]);
+
+  // Group messages by date
+  const groupedMessages = messages.filter((message) => !message.isDeleted)
+    .reduce((groups, message) => {
+    const date = new Date(message.createdAt).toLocaleDateString();
+    if (!groups[date]) groups[date] = [];
+    groups[date].push(message);
+    return groups;
+  }, {} as Record<string, typeof messages>);
+
+  return (
+    <div className="flex flex-col h-full w-full min-h-0">
+      {/* Header */}
+      <div className="flex-shrink-0">
+        <MessageThreadHeader conversationId={conversationId} />
+      </div>
+
+      {/* One scroll container (messages + sticky input) */}
+      <div
+        data-thread-scroll="true"
+        className="flex-1 min-h-0 overflow-y-auto scrollbar-hide relative"
+      >
+        {/* Messages area */}
+        <div className="min-h-[calc(100%-var(--composer-height,0px))] flex flex-col justify-end pt-6">
+          {/* Centered content container */}
+          <div className="max-w-[720px] mx-auto px-6 w-full">
+            {isLoadingMessages ? (
+              <div className="flex items-center justify-center flex-1">
+                <p className="text-gray-500">Loading messages...</p>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {Object.entries(groupedMessages).map(([date, dateMessages]) => {
+                  const firstMessage = dateMessages[0];
+                  const dateTime = new Date(firstMessage.createdAt);
+
+                  const formattedDate = dateTime.toLocaleDateString("en-GB", {
+                    day: "numeric",
+                    month: "long",
+                    year: "numeric",
+                  });
+
+                  const formattedTime = dateTime.toLocaleTimeString("en-US", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    hour12: true,
+                  });
+
+                  return (
+                    <div key={date}>
+                      {/* Date and time header */}
+                      <div className="flex justify-center mb-4">
+                        <span className="inline-flex items-center gap-2 rounded-[4px] bg-white px-2 py-1 text-[10px] leading-[12px] font-normal text-black">
+                          <span>{formattedDate}</span>
+                          <span className="relative -top-[1px]">·</span>
+                          <span>{formattedTime}</span>
+                        </span>
+                      </div>
+
+                      {/* Messages for this date */}
+                      {dateMessages.map((message) => (
+                        <MessageBubble key={message.id} message={message} />
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Sticky Input */}
+        <MessageInput conversationId={conversationId} />
+
+        {/* Scroll anchor */}
+        <div ref={messagesEndRef} className="h-0 w-full" />
+      </div>
+    </div>
+  );
+};
