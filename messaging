@@ -1,0 +1,55 @@
+// Messaging.tsx
+import { useMessaging } from "../hooks/useMessaging";
+import { useMessagingRealtime } from "../hooks/useMessagingRealtime";
+import { useConversationsRealtime } from "../hooks/useConversationsRealtime";
+import { usePlatformConnections } from "../hooks/usePlatformConnections";
+import { ConversationList } from "../components/messaging/ConversationList";
+import { MessageThread } from "../components/messaging/MessageThread";
+import { EmptyState } from "../components/messaging/EmptyState";
+import { getPlatformGradient } from "../lib/utils";
+
+export const Messaging = () => {
+  const { selectedConversationId, conversations } = useMessaging();
+  const { isAnyConnected } = usePlatformConnections();
+
+  // Enable realtime updates for selected conversation
+  useMessagingRealtime(selectedConversationId);
+
+  // Enable realtime updates for conversations list
+  useConversationsRealtime();
+
+  // Get the selected conversation and its platform
+  const selectedConversation = conversations.find(
+    (c) => c.id === selectedConversationId
+  );
+  const platform = selectedConversation?.platform;
+
+  return (
+    <div className="flex h-[calc(100%+1.5rem)] w-[calc(100%+1.5rem)] overflow-hidden -mt-6 -ml-6">
+      {/* Left Panel: Conversation List */}
+      <div className="w-full md:w-80 md:border-r md:border-gray-200 md:flex-shrink-0 bg-white h-full overflow-hidden min-h-0">
+        <ConversationList />
+      </div>
+
+      {/* Right Panel: Message Thread or Empty State */}
+      <div className="hidden md:flex flex-1 min-w-0 min-h-0 h-full relative overflow-hidden">
+        {/* Background (visual only, never blocks scroll/pointer) */}
+        {selectedConversationId ? (
+          <div
+            className="pointer-events-none absolute inset-0"
+            style={{ background: getPlatformGradient(platform) }}
+          />
+        ) : null}
+
+        {/* Content layer */}
+        <div className="relative flex-1 min-w-0 min-h-0 flex">
+          {selectedConversationId ? (
+            <MessageThread conversationId={selectedConversationId} />
+          ) : conversations.length > 0 && isAnyConnected ? (
+            <EmptyState />
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+};
