@@ -1,0 +1,97 @@
+import { useMessaging } from "../../hooks/useMessaging";
+import { useAppStore } from "../../stores/useAppStore";
+import { usePlatformConnections } from "../../hooks/usePlatformConnections";
+import { ConversationItem } from "./ConversationItem";
+import { ConversationListEmptyState } from "./ConversationListEmptyState";
+import { NoAccountsEmptyState } from "./NoAccountsEmptyState";
+import { ConversationFilters } from "./ConversationFilters";
+import SearchIcon from "./icons/SearchIcon.svg";
+import { useTranslation } from 'react-i18next'; // ADD THIS
+
+export const ConversationList = () => {
+  const { t } = useTranslation(); // ADD THIS
+  const {
+    conversations,
+    isLoadingConversations,
+    selectedConversationId,
+    selectConversation,
+    markAsRead,
+  } = useMessaging();
+
+  const { searchQuery, setSearchQuery } = useAppStore();
+  const { isAnyConnected, isAnyLoading } = usePlatformConnections();
+
+  const filteredConversations = conversations.filter((conv) => {
+    const query = searchQuery.toLowerCase();
+    return (
+      (conv.participant?.username ?? "").toLowerCase().includes(query) ||
+      (conv.lastMessageContent ?? "").toLowerCase().includes(query)
+    );
+  });
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Header with search */}
+      <div className="border-b border-gray-100 space-y-3 my-3 pb-[13.5px]">
+        {/* Search bar */}
+        <div className="relative ml-2 mr-2">
+          <img
+            src={SearchIcon}
+            className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-black-400"
+            alt="Search"
+          />
+          <input
+            type="text"
+            placeholder={t('messaging.searchMessages')} 
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-300 rounded-[8px] text-sm text-black/60 font-normal placeholder:text-black/60 placeholder:font-normal focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
+        </div>
+      </div>
+      {/* Filters */}
+      <div className="ml-2 mb-2">
+        <ConversationFilters />
+      </div>
+
+      {/* Conversation list */}
+      <div className="flex-1 overflow-y-auto">
+        {isLoadingConversations || isAnyLoading ? (
+          <div className="p-4 text-center text-gray-500">
+            {t('loading')} {/* TRANSLATE */}
+          </div>
+        ) : !isAnyConnected ? (
+          <NoAccountsEmptyState />
+        ) : conversations.length === 0 ? (
+          <ConversationListEmptyState />
+        ) : filteredConversations.length === 0 ? (
+          <div className="p-4 text-center text-gray-500">
+            {t('messaging.noConversationsFound')} {/* TRANSLATE */}
+          </div>
+        ) : (
+          filteredConversations.map((conversation) => (
+            <ConversationItem
+              key={conversation.id}
+              conversation={conversation}
+              isSelected={conversation.id === selectedConversationId}
+              onClick={() => {
+                if (conversation.id === selectedConversationId) {
+                  markAsRead(conversation.id);
+                  selectConversation(null);
+                } else {
+                  if (selectedConversationId) {
+                    const currentConversation = conversations?.find(c => c.id === selectedConversationId);
+                    if (currentConversation && currentConversation.unreadCount > 0) {
+                      markAsRead(selectedConversationId);
+                    }
+                  }
+                  selectConversation(conversation.id);
+                }
+              }}
+            />
+          ))
+        )}
+      </div>
+    </div>
+  );
+};
