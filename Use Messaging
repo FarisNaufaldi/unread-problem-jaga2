@@ -1,0 +1,122 @@
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { messagingApi, messagingKeys } from "../api/messaging";
+import { useAppStore } from "../stores/useAppStore";
+import { useAuth } from "./useAuth";
+import { toast } from "sonner";
+import { mapInstagramError } from "../utils/instagramErrorMessages";
+
+export const useMessaging = () => {
+  const queryClient = useQueryClient();
+  const { user, isLoadingUser } = useAuth(); // Get current user for cache key scoping
+  const userId = user?.id || null;
+
+  const {
+    selectedConversationId,
+    setSelectedConversationId,
+    conversationFilter,
+    draftMessages,
+    setDraftMessage,
+    clearDraftMessage,
+  } = useAppStore();
+
+  // Query: Get all conversations (scoped to current user)
+  const {
+    data: conversations = [],
+    isLoading: isLoadingConversations,
+    error: conversationsError,
+    refetch: refetchConversations,
+  } = useQuery({
+    queryKey: messagingKeys.conversations(userId),
+    queryFn: messagingApi.getConversations,
+    staleTime: 30 * 1000, // 30 seconds
+    refetchOnWindowFocus: true,
+    enabled: !!userId && !isLoadingUser, // Only fetch when user is loaded
+  });
+
+  // Query: Get messages for selected conversation (scoped to current user)
+  const {
+    data: messagesData,
+    isLoading: isLoadingMessages,
+    error: messagesError,
+    refetch: refetchMessages,
+  } = useQuery({
+    queryKey: messagingKeys.messages(userId, selectedConversationId || ""),
+    queryFn: () => messagingApi.getMessages(selectedConversationId!),
+    enabled: !!selectedConversationId && !!userId && !isLoadingUser, // Require both conversation and user
+    staleTime: 10 * 1000, // 10 seconds
+  });
+
+  // Mutation: Send message
+  const sendMessageMutation = useMutation({
+    mutationFn: messagingApi.sendMessage,
+    onSuccess: () => {
+      // Invalidate messages for this conversation (user-scoped)
+      queryClient.invalidateQueries({
+        queryKey: messagingKeys.messages(userId, selectedConversationId!),
+      });
+      // Update conversations list (last message changed, user-scoped)
+      queryClient.invalidateQueries({
+        queryKey: messagingKeys.conversations(userId),
+      });
+      // Clear draft
+      clearDraftMessage(selectedConversationId!);
+      toast.success("Message sent");
+    },
+    onError: (err: any) => {
+      const errorMessage = mapInstagramError(err.message || "Failed to send message");
+      toast.error(errorMessage);
+    },
+  });
+
+  // Mutation: Mark as read
+  const markAsReadMutation = useMutation({
+    mutationFn: messagingApi.markAsRead,
+    onSuccess: (data, conversationId) => {
+      // Invalidate conversations list (user-scoped) to update unread counts
+      queryClient.invalidateQueries({
+        queryKey: messagingKeys.conversations(userId),
+      });
+    },
+    onError: () => {
+      // Silently fail for mark as read
+    },
+  });
+
+  // Filter conversations based on platform
+  const filteredConversations = conversations.filter((conv) => {
+    if (conversationFilter !== "all") {
+      // Filter by specific platform
+      return conv.platform === conversationFilter;
+    }
+    return true; // 'all' shows all conversations
+  });
+
+  return {
+    // Data
+    conversations: filteredConversations,
+    messages: messagesData?.messages || [],
+    hasMoreMessages: messagesData?.hasMore || false,
+    selectedConversationId,
+    currentDraft: selectedConversationId
+      ? draftMessages[selectedConversationId] || ""
+      : "",
+
+    // Loading states
+    isLoadingConversations,
+    isLoadingMessages,
+    isSendingMessage: sendMessageMutation.isPending,
+
+    // Errors
+    conversationsError,
+    messagesError,
+
+    // Actions
+    selectConversation: setSelectedConversationId,
+    sendMessage: sendMessageMutation.mutate,
+    markAsRead: markAsReadMutation.mutate,
+    setDraft: setDraftMessage,
+    clearDraft: clearDraftMessage,
+    refetchConversations,
+    refetchMessages,
+  };
+};
